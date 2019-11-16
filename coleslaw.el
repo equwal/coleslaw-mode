@@ -3,7 +3,7 @@
 ;; Author: Spenser Truex <web@spensertruex.com>
 ;; Created: 2019-06-16
 ;; Version: 0.2.5
-;; Package-Requires: ((emacs "24.4"))
+;; Package-Requires: ((emacs "24.5"))
 ;; Keywords: lisp wp files convenience
 ;; URL: https://github.com/equwal/coleslaw/
 ;; Homepage: https://spensertruex.com/coleslaw-mode
@@ -29,7 +29,14 @@
 (require 'cl-lib)
 
 (defvar coleslaw-mode-hook nil "Coleslaw-mode, for editing static web content.")
-(defvar coleslaw-separator ";;;;;" "Character that separates keys and values in the coleslaw header")
+(defvar coleslaw-separator ";;;;;"
+  "The string used between the coleslaw headers as in the example:
+;;;;;
+title: Example
+format: cl-who
+date: 2019-06-15
+;;;;;
+Where the separator is \";;;;;\".")
 
 (defvar coleslaw-modes nil
   (concat
@@ -47,7 +54,92 @@
   in your init file."))
 
 (add-hook 'coleslaw-mode-hook 'coleslaw-dispatch)
+(defvar coleslaw-formats (list "md" "cl-who" "rst" "html" "org")
+  "The format header values that coleslaw will allow to be auto-inserted.")
 
+(defun coleslaw--valid-format (str)
+  "Determine if the STR is permissible for a format: header in Coleslaw."
+  (when (stringp str)
+    (cl-some (lambda (x)
+               (string-equal x str))
+             coleslaw-formats)))
+(defun coleslaw--url-charp (char)
+  "Is the CHAR legal in a static URL according to RFC3986? See
+Section 2."
+  (find char (concat "abcdefghijklmnopqrstuvwxyz"
+                     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                     "0123456789-_~.%")))
+(defun coleslaw--urlp (str)
+  "Is the STR of valid URL characters?"
+  (every #'coleslaw--url-charp str))
+(defun coleslaw--valid-tags (str)
+  (coleslaw--urlp str))
+
+(defun coleslaw--bufftype (type)
+  "Determine if the file type of the current buffer is TYPE."
+  (let ((len (length buffer-file-name)))
+    (and (>= len 5)
+         (string-equal type (cl-subseq buffer-file-name (- len 5))))))
+
+(defun coleslaw--insist (predicate prompt1 prompt2)
+  "Insist based on the PREDICATE that the minibuffer reponse to
+PROMPT1 is valid; otherwise, show PROMPT2 until correct."
+  (let ((res (read-from-minibuffer (if prompt1
+                                       (concat prompt1 " ")
+                                     (concat prompt2 " ")))))
+    (if (funcall predicate res)
+        res
+      (coleslaw--insist predicate nil prompt2))))
+(defun coleslaw--field (predicate field-prompt &optional fail-prompt)
+  (concat "\n" field-prompt " "
+          (coleslaw--insist predicate field-prompt
+                            (if fail-prompt
+                                (concat fail-prompt " ")
+                              (concat "INVALID! " field-prompt " ")))))
+;;;###autoload
+(defmacro coleslaw--skeleton-when (condition &rest code)
+    "Generate a `when' clause, but return the empty string for
+false conditions."
+    `(if ,condition
+         (concat ,@code)
+       ""))
+;;;###autoload
+(defun coleslaw-insert-header  ()
+  "Insert the skeleton for as specified by default for a coleslaw file type."
+  (interactive)
+  (skeleton-insert '(nil coleslaw-separator
+                         (coleslaw--field #'identity "title:")
+                         (coleslaw--field #'coleslaw--valid-format
+                                   "format:"
+                                   "format be one of `coleslaw-formats':")
+                         (coleslaw--skeleton-when
+                          (y-or-n-p "Insert tags?")
+                          (coleslaw--field #'(lambda (s)
+                                        (or (coleslaw--urlp s)
+                                            (some #'(lambda (s)
+                                                      ;; multiple tags
+                                                      (eql ?\  s))
+                                                  s)))
+                                    "tags:"
+                                    "Invalid character for a tag. tags:"))
+                         (coleslaw--skeleton-when
+                          (coleslaw--bufftype ".page")
+                          (coleslaw--field #'coleslaw--urlp "url: " "Bad URL:"))
+                         (coleslaw--skeleton-when
+                          (and (coleslaw--bufftype ".post")
+                               (y-or-n-p "Insert excerpt?"))
+                          (coleslaw--field #'identity "excerpt:"))
+                         "\ndate: "
+                         (format-time-string "%Y-%m-%d" (current-time))
+                         "\n" coleslaw-separator "\n") 0))
+
+(defun coleslaw-mode-regex (mode)
+  (concat coleslaw-separator
+          "\\(\n\\|.\\)+"
+          "format:[\t ]"
+          mode
+          "\\(\n\\|.\\)+"
+          coleslaw-separator))
 ;;;###autoload
 (defun coleslaw-setup ()
   "Setup your coleslaw like the author suggests (conservative edits only).
@@ -56,56 +148,28 @@ files, enable such basic editing modes as the mode function
 `markdown-mode', the mode function `lisp-mode', the mode function
 `html-mode', or the mode function `rst-mode' based on the format
 header field.  Conservative additions only."
-  (setq coleslaw-modes
-        '(("md" . (markdown-mode))
-          ("cl-who" . (lisp-mode))
-          ("html" . (html-mode))
-          ("rst" . (rst-mode)))))
-
-(defun coleslaw-dispatch-format (format)
-  "Select the mode for a file of type FORMAT."
-  (mapc (lambda (mode) (funcall mode))
-        (cdr (assoc format coleslaw-modes #'string-equal))))
-
-(defun coleslaw-dispatch ()
-  "Set modes based on this buffer's 'format: (md, cl-who, etc.)' metadata line."
   (interactive)
-  (when (coleslaw--header-detected)
-    (coleslaw-dispatch-format (coleslaw--header-field "format"))))
-
-(defun coleslaw--re-search-whole (regex &optional bound noerror count)
-  "Search forward and backwards from the point in the buffer for REGEX.
-BOUND, NOERROR, and COUNT are arguments to `re-search-forward'
-and `re-search-backward'."
-  (let ((args (list regex bound noerror count)))
-    (if (apply #'re-search-forward args)
-        (match-string 1)
-      (when (apply #'re-search-backward args)
-        (match-string 1)))))
-
-(defun coleslaw--header-detected ()
-  "Detect if a header is already in the file."
-  ;; pointer in fields, under fields, or in separator
-  (or (re-search-forward (regexp-quote coleslaw-separator)
-                         nil t 1)
-      (re-search-backward (regexp-quote coleslaw-separator)
-                          nil t)))
-
-(defun coleslaw--header-field (field)
-  "Search the current bufffer for the header FIELD.
-Don't include the colon in the FIELD string (e.g. \"format\")."
-  (when (coleslaw--header-detected)
-    (coleslaw--re-search-whole (concat field
-                                       ":"
-                                       "[\t ]*\\(?1:.*\\)\n")
-                               nil t)))
+  (setq coleslaw-modes
+        '(("md" . markdown-mode)
+          ("cl-who" . lisp-mode)
+          ("html" . html-mode)
+          ("rst" . rst-mode)))
+  (cl-loop for mode in coleslaw-modes
+           do (add-to-list 'magic-mode-alist
+                           (cons (coleslaw-mode-regex (car mode))
+                                 (cdr mode))))
+  ;; This code only works if the user did a (require 'autoinsert)
+  (setq auto-insert t)
+  ;; This does a lot of things other than setup coleslaw.
+  (add-hook 'find-file-hook 'auto-insert)
+  (add-to-list 'auto-insert-alist
+               '("\\.\\(page\\|post\\)\\'" . coleslaw-insert-header)))
 
 ;;;###autoload
 (define-minor-mode coleslaw-mode "Edit coleslaw static content gloriously."
   :lighter " Coleslaw"
   (dolist (type '("\\.page\\'" "\\.post\\'"))
-    (add-to-list 'auto-mode-alist (cons type 'coleslaw-mode)))
-  (coleslaw-dispatch))
+    (add-to-list 'auto-mode-alist (cons type 'coleslaw-mode))))
 
 (provide 'coleslaw)
 ;;; coleslaw.el ends here
