@@ -36,6 +36,9 @@ format: cl-who
 date: 2019-06-15
 ;;;;;
 Where the separator is \";;;;;\".")
+(defvar coleslaw-types '(".page" ".post")
+  "Those file types which coleslaw will try to auto-insert a
+skeleton into.")
 
 (defvar coleslaw-modes nil
   (concat
@@ -74,11 +77,15 @@ Section 2."
 (defun coleslaw--valid-tags (str)
   (coleslaw--urlp str))
 
+(defun coleslaw--bufftypep ()
+  (cl-some #'(lambda (type)
+               (string= type (coleslaw--bufftype buffer-file-name)))
+           coleslaw-types))
 (defun coleslaw--bufftype (type)
-  "Determine if the file type of the current buffer is TYPE."
+  "Determine if the file type of the current buffer is TYPE.
+Type should be something like \".page\"."
   (let ((len (length buffer-file-name)))
-    (and (>= len 5)
-         (string-equal type (cl-subseq buffer-file-name (- len 5))))))
+    (subseq buffer-file-name (cl-search "." buffer-file-name :from-end t))))
 
 (defun coleslaw--insist (predicate prompt1 prompt2)
   "Insist based on the PREDICATE that the minibuffer reponse to
@@ -94,8 +101,10 @@ PROMPT1 is valid; otherwise, show PROMPT2 until correct."
   (concat field-prompt " "
           (coleslaw--insist predicate field-prompt
                             (if fail-prompt
-                                (and field-prompt (concat fail-prompt " "))
-                              (concat "INVALID! " field-prompt " ")))
+                                (and field-prompt
+                                     (concat fail-prompt " "))
+                              (concat "INVALID! "
+                                      field-prompt " ")))
           "\n"))
 ;;;###autoload
 (defmacro coleslaw--skeleton-when (condition &rest code)
@@ -105,34 +114,40 @@ false conditions."
          (concat ,@code)
        ""))
 ;;;###autoload
+(defun coleslaw-insert-header-conditionally ()
+  (interactive)
+  (when (coleslaw--bufftypep)
+    (coleslaw-insert-header)))
+;;;###autoload
 (defun coleslaw-insert-header  ()
   "Insert the skeleton for as specified by default for a coleslaw file type."
   (interactive)
-  (skeleton-insert '(nil coleslaw-separator "\n"
-                         (coleslaw--field #'identity "title:")
-                         (coleslaw--field #'coleslaw--valid-format
-                                   "format:"
-                                   "format be one of `coleslaw-formats':")
-                         (coleslaw--skeleton-when
-                          (y-or-n-p "Insert tags?")
-                          (coleslaw--field #'(lambda (s)
-                                        (or (coleslaw--urlp s)
-                                            (cl-some #'(lambda (s)
-                                                      ;; multiple tags
-                                                      (eql ?\  s))
-                                                  s)))
-                                    "tags:"
-                                    "Invalid character for a tag. tags:"))
-                         (coleslaw--skeleton-when
-                          (coleslaw--bufftype ".page")
-                          (coleslaw--field #'coleslaw--urlp "url: " "Bad URL:"))
-                         (coleslaw--skeleton-when
-                          (and (coleslaw--bufftype ".post")
-                               (y-or-n-p "Insert excerpt?"))
-                          (coleslaw--field #'identity "excerpt:"))
-                         "date: "
-                         (format-time-string "%Y-%m-%d" (current-time))
-                         "\n" coleslaw-separator "\n") 0)
+  (skeleton-insert
+   '(nil coleslaw-separator "\n"
+         (coleslaw--field #'identity "title:")
+         (coleslaw--field #'coleslaw--valid-format
+                          "format:"
+                          "format be one of `coleslaw-formats':")
+         (coleslaw--skeleton-when
+          (y-or-n-p "Insert tags?")
+          (coleslaw--field #'(lambda (s)
+                               (or (coleslaw--urlp s)
+                                   (cl-some #'(lambda (s)
+                                                ;; multiple tags
+                                                (eql ?\  s))
+                                            s)))
+                           "tags:"
+                           "Invalid character for a tag. tags:"))
+         (coleslaw--skeleton-when (coleslaw--bufftype ".post")
+          (coleslaw--field #'coleslaw--urlp "url: " "Bad URL:"))
+         (coleslaw--skeleton-when
+          (and (coleslaw--bufftype ".post")
+               (y-or-n-p "Insert excerpt?"))
+          (coleslaw--field #'identity "excerpt:"))
+         "date: "
+         (format-time-string "%Y-%m-%d" (current-time))
+         "\n" coleslaw-separator "\n") 0)
+  ;; Calls magic-mode-alist on the header.
   (set-auto-mode))
 
 (defun coleslaw-mode-regex (mode)
@@ -160,13 +175,8 @@ header field.  Conservative additions only."
            do (add-to-list 'magic-mode-alist
                            (cons (coleslaw-mode-regex (car mode))
                                  (cdr mode))))
-  (setq auto-insert t)
-  ;; This code only works if the user did a (require 'autoinsert)
-   ;; This does a lot of things other than setup coleslaw.
-  (add-hook 'find-file-hook 'auto-insert)
-  (when (boundp 'auto-insert-alist)
-    (add-to-list 'auto-insert-alist
-		 '("\\.\\(page\\|post\\)\\'" . coleslaw-insert-header))))
+  (add-hook 'find-file-hook
+            'coleslaw-insert-header-conditionally))
 
 ;;;###autoload
 (define-minor-mode coleslaw-mode "Edit coleslaw static content gloriously."
