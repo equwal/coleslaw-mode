@@ -172,6 +172,16 @@ interactive use."
           mode
           "\\(\n\\|.\\)+"
           coleslaw-separator))
+(defun coleslaw-select-first-mode (modes)
+  "The first defined mode function in MODES.
+If there isn't one then NIL."
+  (when modes
+    ;; NOTE: Trying to return `normal-mode' in the else place can lead to
+    ;; infinite recursion.
+    (or (and (boundp (car modes))
+             (car modes))
+        (coleslaw-select-first-mode (cdr modes)))))
+
 ;;;###autoload
 (defun coleslaw-setup ()
   "Setup your coleslaw like the author suggests (conservative edits only).
@@ -182,16 +192,19 @@ files, enable such basic editing modes as the mode function
 header field.  Conservative additions only."
   (interactive)
   (setq coleslaw-modes
-        '(("md" . markdown-mode)
-          ("cl-who" . lisp-mode)
-          ("html" . html-mode)
-          ("rst" . rst-mode)))
+        '(("md" . (markdown-mode))
+          ("cl-who" . (lisp-mode))
+          ;; You can define multiple modes. If none are found, then nothing
+          ;; happens.
+          ("html" . (html-mode sgml-mode))
+          ("rst" . (rst-mode))))
   (cl-loop for mode in coleslaw-modes
            do (add-to-list 'magic-mode-alist
                            (cons (coleslaw--mode-regex (car mode))
-                                 (cdr mode))))
+                                 (coleslaw-select-first-mode (cdr mode)))))
   (add-hook 'find-file-hook
             'coleslaw-insert-header-conditionally))
+
 (provide 'coleslaw)
 
 ;;; coleslaw.el ends here
