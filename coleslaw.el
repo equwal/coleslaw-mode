@@ -37,8 +37,7 @@ date: 2019-06-15
 ;;;;;
 Where the separator is \";;;;;\".")
 (defvar coleslaw-types '(".page" ".post")
-  "Those file types which coleslaw will try to auto-insert a
-skeleton into.")
+  "Those file types which coleslaw will try to auto insert into.")
 
 (defvar coleslaw-modes nil
   (concat
@@ -66,30 +65,32 @@ skeleton into.")
                (string-equal x str))
              coleslaw-formats)))
 (defun coleslaw--url-charp (char)
-  "Is the CHAR legal in a static URL according to RFC3986? See
-Section 2."
+  "Is the CHAR legal in a static URL according to RFC3986?
+See Section 2."
   (cl-find char (concat "abcdefghijklmnopqrstuvwxyz"
                         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                         "0123456789-_~.%")))
 (defun coleslaw--urlp (str)
   "Is the STR of valid URL characters?"
   (cl-every #'coleslaw--url-charp str))
-(defun coleslaw--valid-tags (str)
-  (coleslaw--urlp str))
 
 (defun coleslaw--bufftypep ()
+  "Confirm that the current buffer is a coleslaw type.
+Uses `coleslaw-types'."
   (cl-some #'(lambda (type)
                (string= type (coleslaw--bufftype buffer-file-name)))
            coleslaw-types))
 (defun coleslaw--bufftype (type)
   "Determine if the file type of the current buffer is TYPE.
 Type should be something like \".page\"."
-  (let ((len (length buffer-file-name)))
-    (subseq buffer-file-name (cl-search "." buffer-file-name :from-end t))))
+  (string= type
+           (cl-subseq buffer-file-name
+                      (cl-search "." buffer-file-name
+                                 :from-end t))))
 
 (defun coleslaw--insist (predicate prompt1 prompt2)
-  "Insist based on the PREDICATE that the minibuffer reponse to
-PROMPT1 is valid; otherwise, show PROMPT2 until correct."
+  "Insist based on a minibuffer response that is PREDICATE.
+Use PROMPT1 the first time, then show PROMPT2 until correct."
   (let ((res (read-from-minibuffer (if prompt1
                                        (concat prompt1 " ")
                                      (concat prompt2 " ")))))
@@ -97,7 +98,9 @@ PROMPT1 is valid; otherwise, show PROMPT2 until correct."
         res
       (coleslaw--insist predicate nil prompt2))))
 (defun coleslaw--field (predicate field-prompt &optional fail-prompt)
-  ;; All the complicated logic is just to put in spaces.
+  "Insistently insert a field using PREDICATE to confirm.
+FIELD-PROMPT is the first prompt. FAIL-PROMPT is the second. If
+FAIL-PROMPT is nil then a reasonable one will be made up."
   (concat field-prompt " "
           (coleslaw--insist predicate field-prompt
                             (if fail-prompt
@@ -106,15 +109,18 @@ PROMPT1 is valid; otherwise, show PROMPT2 until correct."
                               (concat "INVALID! "
                                       field-prompt " ")))
           "\n"))
-;;;###autoload
 (defmacro coleslaw--skeleton-when (condition &rest code)
-    "Generate a `when' clause, but return the empty string for
-false conditions."
+  "Return the empty string on false CONDITION.
+Otherwise the CODE is executed while concatenating."
     `(if ,condition
          (concat ,@code)
        ""))
 ;;;###autoload
 (defun coleslaw-insert-header-conditionally ()
+  "Insert the header, but only on files that match.
+Uses `coleslaw-types' for matches. Good for hooking into
+`find-file-hook'. Bind `coleslaw-insert-header' instead for
+interactive use."
   (interactive)
   (when (coleslaw--bufftypep)
     (coleslaw-insert-header)))
@@ -130,7 +136,7 @@ false conditions."
                           "format:"
                           "format be one of `coleslaw-formats':")
          (coleslaw--skeleton-when
-          (y-or-n-p "Insert tags?")
+          (y-or-n-p "Insert tags? ")
           (coleslaw--field #'(lambda (s)
                                (or (coleslaw--urlp s)
                                    (cl-some #'(lambda (s)
@@ -143,7 +149,7 @@ false conditions."
           (coleslaw--field #'coleslaw--urlp "url: " "Bad URL:"))
          (coleslaw--skeleton-when
           (and (coleslaw--bufftype ".post")
-               (y-or-n-p "Insert excerpt?"))
+               (y-or-n-p "Insert excerpt? "))
           (coleslaw--field #'identity "excerpt:"))
          "date: "
          (format-time-string "%Y-%m-%d" (current-time))
@@ -151,7 +157,8 @@ false conditions."
   ;; Calls magic-mode-alist on the header.
   (set-auto-mode))
 
-(defun coleslaw-mode-regex (mode)
+(defun coleslaw--mode-regex (mode)
+  "Build a regex that match a format: header for MODE."
   (concat coleslaw-separator
           "\\(\n\\|.\\)+"
           "format:[\t ]"
@@ -178,12 +185,5 @@ header field.  Conservative additions only."
                                  (cdr mode))))
   (add-hook 'find-file-hook
             'coleslaw-insert-header-conditionally))
-
-;;;###autoload
-(define-minor-mode coleslaw-mode "Edit coleslaw static content gloriously."
-  :lighter " Coleslaw"
-  (dolist (type '("\\.page\\'" "\\.post\\'"))
-    (add-to-list 'auto-mode-alist (cons type 'coleslaw-mode))))
-
 (provide 'coleslaw)
 ;;; coleslaw.el ends here
