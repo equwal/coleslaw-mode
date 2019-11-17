@@ -122,6 +122,7 @@ false conditions."
 (defun coleslaw-insert-header  ()
   "Insert the skeleton for as specified by default for a coleslaw file type."
   (interactive)
+  (goto-char (point-min))
   (skeleton-insert
    '(nil coleslaw-separator "\n"
          (coleslaw--field #'identity "title:")
