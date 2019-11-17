@@ -66,12 +66,12 @@ Where the separator is \";;;;;\".")
 (defun coleslaw--url-charp (char)
   "Is the CHAR legal in a static URL according to RFC3986? See
 Section 2."
-  (find char (concat "abcdefghijklmnopqrstuvwxyz"
-                     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                     "0123456789-_~.%")))
+  (cl-find char (concat "abcdefghijklmnopqrstuvwxyz"
+                        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                        "0123456789-_~.%")))
 (defun coleslaw--urlp (str)
   "Is the STR of valid URL characters?"
-  (every #'coleslaw--url-charp str))
+  (cl-every #'coleslaw--url-charp str))
 (defun coleslaw--valid-tags (str)
   (coleslaw--urlp str))
 
@@ -91,11 +91,13 @@ PROMPT1 is valid; otherwise, show PROMPT2 until correct."
         res
       (coleslaw--insist predicate nil prompt2))))
 (defun coleslaw--field (predicate field-prompt &optional fail-prompt)
-  (concat "\n" field-prompt " "
+  ;; All the complicated logic is just to put in spaces.
+  (concat field-prompt " "
           (coleslaw--insist predicate field-prompt
                             (if fail-prompt
-                                (concat fail-prompt " ")
-                              (concat "INVALID! " field-prompt " ")))))
+                                (and field-prompt (concat fail-prompt " "))
+                              (concat "INVALID! " field-prompt " ")))
+          "\n"))
 ;;;###autoload
 (defmacro coleslaw--skeleton-when (condition &rest code)
     "Generate a `when' clause, but return the empty string for
@@ -107,7 +109,7 @@ false conditions."
 (defun coleslaw-insert-header  ()
   "Insert the skeleton for as specified by default for a coleslaw file type."
   (interactive)
-  (skeleton-insert '(nil coleslaw-separator
+  (skeleton-insert '(nil coleslaw-separator "\n"
                          (coleslaw--field #'identity "title:")
                          (coleslaw--field #'coleslaw--valid-format
                                    "format:"
@@ -116,7 +118,7 @@ false conditions."
                           (y-or-n-p "Insert tags?")
                           (coleslaw--field #'(lambda (s)
                                         (or (coleslaw--urlp s)
-                                            (some #'(lambda (s)
+                                            (cl-some #'(lambda (s)
                                                       ;; multiple tags
                                                       (eql ?\  s))
                                                   s)))
@@ -129,7 +131,7 @@ false conditions."
                           (and (coleslaw--bufftype ".post")
                                (y-or-n-p "Insert excerpt?"))
                           (coleslaw--field #'identity "excerpt:"))
-                         "\ndate: "
+                         "date: "
                          (format-time-string "%Y-%m-%d" (current-time))
                          "\n" coleslaw-separator "\n") 0))
 
