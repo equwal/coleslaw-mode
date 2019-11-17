@@ -27,7 +27,6 @@
 ;;; Code:
 
 (require 'cl-lib)
-
 (defvar coleslaw-mode-hook nil "Coleslaw-mode, for editing static web content.")
 (defvar coleslaw-separator ";;;;;"
   "The string used between the coleslaw headers as in the example:
@@ -133,7 +132,8 @@ false conditions."
                           (coleslaw--field #'identity "excerpt:"))
                          "date: "
                          (format-time-string "%Y-%m-%d" (current-time))
-                         "\n" coleslaw-separator "\n") 0))
+                         "\n" coleslaw-separator "\n") 0)
+  (set-auto-mode))
 
 (defun coleslaw-mode-regex (mode)
   (concat coleslaw-separator
@@ -160,12 +160,13 @@ header field.  Conservative additions only."
            do (add-to-list 'magic-mode-alist
                            (cons (coleslaw-mode-regex (car mode))
                                  (cdr mode))))
-  ;; This code only works if the user did a (require 'autoinsert)
   (setq auto-insert t)
-  ;; This does a lot of things other than setup coleslaw.
+  ;; This code only works if the user did a (require 'autoinsert)
+   ;; This does a lot of things other than setup coleslaw.
   (add-hook 'find-file-hook 'auto-insert)
-  (add-to-list 'auto-insert-alist
-               '("\\.\\(page\\|post\\)\\'" . coleslaw-insert-header)))
+  (when (boundp 'auto-insert-alist)
+    (add-to-list 'auto-insert-alist
+		 '("\\.\\(page\\|post\\)\\'" . coleslaw-insert-header))))
 
 ;;;###autoload
 (define-minor-mode coleslaw-mode "Edit coleslaw static content gloriously."
