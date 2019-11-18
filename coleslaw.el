@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "24.5"))
 ;; Keywords: lisp wp files convenience
 ;; URL: https://github.com/equwal/coleslaw/
-;; Homepage: https://spensertruex.com/coleslaw-mode
+;; Homepage: https://spensertruex.com/coleslaw
 ;; This file is not part of GNU Emacs, but you want to use  GNU Emacs to run it.
 ;; This file is very free software.
 ;; License:
