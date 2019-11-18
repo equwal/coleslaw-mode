@@ -1,5 +1,5 @@
 
-[![Build Status]https://secure.travis-ci.org/my-github-id/my-library.png?branch=master,staging,production)](http://travis-ci.org/my-github-id/my-library)
+[![Build Status](https://secure.travis-ci.org/my-github-id/my-library.png?branch=master,staging,production)](http://travis-ci.org/my-github-id/my-library)
 
 Provide mode-selection and skeleton insertion for the [https://github.com/kingcons/coleslaw](Coleslaw static content generator).
 
