@@ -15,55 +15,69 @@
 
 ;;; Commentary:
 
-;; Please add (coleslaw-setup) to your init file for the author's mode
-;; selections. Bind `coleslaw-dispatch' to a key to make coleslaw discover the
-;; mode.
-
 ;; For the coleslaw static content generator, a minor mode which inserts the
 ;; header, selects the major mode, and generally makes writing static content
 ;; easier.
 
-;; Consider also installing the coleslaw-snippet package to generate your snippets.
 ;;; Code:
 
 (require 'cl-lib)
-(defvar coleslaw-mode-hook nil "Coleslaw-mode, for editing static web content.")
-(defvar coleslaw-separator ";;;;;"
+
+(defmacro coleslaw--custom-default (var default doc &rest defcustom-keys)
+  "Put default values for VAR as DEFAULT.
+Use the same syntax as a normal `defcustom' DOC and
+DEFCUSTOM-KEYS are used for it."
+  (let ((def (gensym)))
+    `(let ((,def ,default))
+       (progn (unless (boundp ',var) (setq ,var ,def))
+              (defcustom ,var ,def ,doc ,@defcustom-keys)))))
+
+(coleslaw--custom-default coleslaw-modes
+      '(("md" . (markdown-mode))
+        ("cl-who" . (lisp-mode))
+        ("html" . (html-mode sgml-mode))
+        ("rst" . (rst-mode)))
+      "Format types and modes from the 'format: ' header.
+Each mode in the mode list is tried in order. If none match, then
+the mode will not be changed from the `normal-mode' (probably
+`fundamental-mode'). Coleslaw will NOT PERMIT a `format:' header
+which is not in this list, so you may choose to use `(\"plain\" .
+nil)' or similar for formats where no mode change is needed."
+      :tag "Format headers and types alist"
+      :type '(alist :key-type string
+                    :value-type (list symbol))
+      :group 'coleslaw
+      :local t
+      :package-version "0.2.6")
+(coleslaw--custom-default coleslaw-types
+  '(".page" ".post")
+  "Those file types which coleslaw will try to auto insert into."
+  :tag "File type extensions (.page, etc.) to use"
+  :type '(list string)
+  :local t
+  :package-version "0.2.6"
+  :group 'coleslaw)
+
+(coleslaw--custom-default coleslaw-separator ";;;;;"
   "The string used between the coleslaw headers as in the example:
 ;;;;;
 title: Example
 format: cl-who
 date: 2019-06-15
 ;;;;;
-Where the separator is \";;;;;\".")
-(defvar coleslaw-types '(".page" ".post")
-  "Those file types which coleslaw will try to auto insert into.")
-
-(defvar coleslaw-modes nil
-  (concat
-   "Modes based on the regex (special characters quoted)"
-   (regexp-quote coleslaw-separator)
-   "
-  format: FORMAT
-" (regexp-quote coleslaw-separator) "
-  headers in the coleslaw file. A simple default choice is:
-  (setq coleslaw-modes
-        '((\"md\" . (markdown-mode))
-          (\"cl-who\" . (lisp-mode))
-          (\"html\" . (html-mode))
-          (\"rst\" . (rst-mode))))
-  in your init file."))
-
-(add-hook 'coleslaw-mode-hook 'coleslaw-dispatch)
-(defvar coleslaw-formats (list "md" "cl-who" "rst" "html" "org")
-  "The format header values that coleslaw will allow to be auto-inserted.")
+Where the separator is \";;;;;\"."
+  :tag "The separator for the header"
+  :type 'string
+  :group 'coleslaw
+  :local t
+  :package-version "0.2.6")
 
 (defun coleslaw--valid-format (str)
   "Determine if the STR is permissible for a format: header in Coleslaw."
   (when (stringp str)
     (cl-some (lambda (x)
                (string-equal x str))
-             coleslaw-formats)))
+             (cl-mapcar #'car coleslaw-modes))))
 (defun coleslaw--url-charp (char)
   "Is the CHAR legal in a static URL according to RFC3986?
 See Section 2."
@@ -77,15 +91,15 @@ See Section 2."
 (defun coleslaw--bufftypep ()
   "Confirm that the current buffer is a coleslaw type.
 Uses `coleslaw-types'."
-  (cl-some #'(lambda (type) (coleslaw--bufftype type))
+  (cl-some #'(lambda (type)
+               (string= type (coleslaw--bufftype)))
            coleslaw-types))
-(defun coleslaw--bufftype (type)
-  "Determine if the file type of the current buffer is TYPE.
-Type should be something like \".page\"."
-  (string= type
-           (cl-subseq buffer-file-name
-                      (cl-search "." buffer-file-name
-                                 :from-end t))))
+(defun coleslaw--bufftype ()
+  "Return the file type of the current buffer.
+Should be something starting with a dot like \".page\"."
+  (cl-subseq buffer-file-name
+             (cl-search "." buffer-file-name
+                        :from-end t)))
 
 (defun coleslaw--insist (predicate prompt1 prompt2)
   "Insist based on a minibuffer response that is PREDICATE.
@@ -114,55 +128,61 @@ Otherwise the CODE is executed while concatenating."
     `(if ,condition
          (concat ,@code)
        ""))
-;;;###autoload
+
+(defun coleslaw-insert-header ()
+  "Insert the coleslaw header in the current buffer.
+use (setq auto-insert t)"
+  (interactive)
+  (let ((prev-prompt (when (boundp 'auto-insert-prompt)
+                       auto-insert-prompt)))
+    (when (boundp 'auto-insert-prompt)
+      (setq auto-insert-prompt
+            "Perform Coleslaw header insertion [y/n]? "))
+    (goto-char (point-min))
+    (skeleton-insert
+     '(nil coleslaw-separator "\n"
+           (coleslaw--field #'identity "title:")
+           (coleslaw--field #'coleslaw--valid-format
+                            "format:"
+                            "format must be in `coleslaw-modes':")
+           (coleslaw--skeleton-when
+            (y-or-n-p "Insert tags? ")
+            (coleslaw--field #'(lambda (s)
+                                 (or (coleslaw--urlp s)
+                                     (cl-some #'(lambda (s)
+                                                  ;; multiple tags
+                                                  (eql ?\  s))
+                                              s)))
+                             "tags:"
+                             "Invalid character for a tag. tags:"))
+           (coleslaw--skeleton-when (string= ".post" (coleslaw--bufftype))
+                                    (coleslaw--field #'coleslaw--urlp
+                                                     "url: "
+                                                     "Bad URL:"))
+           (coleslaw--skeleton-when
+            (and (string= ".post" (coleslaw--bufftype))
+                 (y-or-n-p "Insert excerpt? "))
+            (coleslaw--field #'identity "excerpt:"))
+           "date: "
+           (format-time-string "%Y-%m-%d" (current-time))
+           "\n" coleslaw-separator "\n") 0)
+    ;; Calls magic-mode-alist on the header.
+    (set-auto-mode)
+    (when (boundp 'auto-insert-prompt)
+      (setq auto-insert-prompt prev-prompt))))
+
 (defun coleslaw-insert-header-conditionally ()
   "Insert the header, but only on files that match.
 Uses `coleslaw-types' for matches. Good for hooking into
 `find-file-hook'. Bind `coleslaw-insert-header' instead for
 interactive use."
   (interactive)
+  (display-buffer-same-window (current-buffer) nil)
   (when (coleslaw--bufftypep)
     ;; KLUDGE: Sometimes the buffer might not be showing the file before
     ;; coleslaw-insert-header is called. We can ensure that is happens by
     ;; attempting to display the buffer before some code elsewhere does.
-    (display-buffer-same-window (current-buffer) nil)
     (coleslaw-insert-header)))
-;;;###autoload
-(defun coleslaw-insert-header  ()
-  "Insert the skeleton for as specified by default for a coleslaw file type."
-  (interactive)
-
-  (let ((prev-prompt auto-insert-prompt))
-    (setq auto-insert-prompt "Perform Coleslaw header insertion [y/n]? ")
-   (goto-char (point-min))
-   (skeleton-insert
-    '(nil coleslaw-separator "\n"
-          (coleslaw--field #'identity "title:")
-          (coleslaw--field #'coleslaw--valid-format
-                           "format:"
-                           "format be one of `coleslaw-formats':")
-          (coleslaw--skeleton-when
-           (y-or-n-p "Insert tags? ")
-           (coleslaw--field #'(lambda (s)
-                                (or (coleslaw--urlp s)
-                                    (cl-some #'(lambda (s)
-                                                 ;; multiple tags
-                                                 (eql ?\  s))
-                                             s)))
-                            "tags:"
-                            "Invalid character for a tag. tags:"))
-          (coleslaw--skeleton-when (coleslaw--bufftype ".post")
-                                   (coleslaw--field #'coleslaw--urlp "url: " "Bad URL:"))
-          (coleslaw--skeleton-when
-           (and (coleslaw--bufftype ".post")
-                (y-or-n-p "Insert excerpt? "))
-           (coleslaw--field #'identity "excerpt:"))
-          "date: "
-          (format-time-string "%Y-%m-%d" (current-time))
-          "\n" coleslaw-separator "\n") 0)
-   ;; Calls magic-mode-alist on the header.
-   (set-auto-mode)
-   (setq auto-insert-prompt prev-prompt)))
 
 (defun coleslaw--mode-regex (mode)
   "Build a regex that match a format: header for MODE."
@@ -177,33 +197,17 @@ interactive use."
 If there isn't one then NIL."
   (when modes
     ;; NOTE: Trying to return `normal-mode' in the else place can lead to
-    ;; infinite recursion.
+    ;; infinite recursion; use NIL.
     (or (and (boundp (car modes))
              (car modes))
         (coleslaw-select-first-mode (cdr modes)))))
 
-;;;###autoload
-(defun coleslaw-setup ()
-  "Setup your coleslaw like the author suggests (conservative edits only).
-strongly recommended!  Enable auto insertion for .page and .post
-files, enable such basic editing modes as the mode function
-`markdown-mode', the mode function `lisp-mode', the mode function
-`html-mode', or the mode function `rst-mode' based on the format
-header field.  Conservative additions only."
-  (interactive)
-  (setq coleslaw-modes
-        '(("md" . (markdown-mode))
-          ("cl-who" . (lisp-mode))
-          ;; You can define multiple modes. If none are found, then nothing
-          ;; happens.
-          ("html" . (html-mode sgml-mode))
-          ("rst" . (rst-mode))))
-  (cl-loop for mode in coleslaw-modes
-           do (add-to-list 'magic-mode-alist
-                           (cons (coleslaw--mode-regex (car mode))
-                                 (coleslaw-select-first-mode (cdr mode)))))
-  (add-hook 'find-file-hook
-            'coleslaw-insert-header-conditionally))
+(cl-loop for mode in coleslaw-modes
+         do (add-to-list 'magic-mode-alist
+                         (cons (coleslaw--mode-regex (car mode))
+                               (coleslaw-select-first-mode (cdr mode)))))
+(add-hook 'find-file-hook
+          'coleslaw-insert-header-conditionally)
 
 (provide 'coleslaw)
 
