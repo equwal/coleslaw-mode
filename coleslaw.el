@@ -178,7 +178,8 @@ Uses `coleslaw-types' for matches. Good for hooking into
 interactive use."
   (interactive)
   (display-buffer-same-window (current-buffer) nil)
-  (when (coleslaw--bufftypep)
+  (when (and (coleslaw--bufftypep)
+             (= (buffer-size (current-buffer)) 0))
     ;; KLUDGE: Sometimes the buffer might not be showing the file before
     ;; coleslaw-insert-header is called. We can ensure that is happens by
     ;; attempting to display the buffer before some code elsewhere does.
