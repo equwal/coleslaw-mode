@@ -1,6 +1,14 @@
 #+TITLE: CHANGELOG
 #+AUTHOR: Spenser Truex
 #+EMAIL: web@spensertruex.com
+* 0.3.0
+Coleslaw-mode has been rewritten. It is now much simpler to use and setup.
+- defcustom variables for defaults
+- No need for `(coleslaw-setup)`. Instead, a user can include auto-insert, or define a key for insertion.
+- This no longer is a "mode." No mode is defined.
+- Magic alist is used to change to a decent major mode, or it is left as the normal-mode.
+- A number of bugfixes; for example, newlines are placed after each form, instead of before, which keeps the cursor at the next point where the skeleton will insert.
+
 * 0.2.5
 - Pulled code from [[https://github.com/RomanHargrave][Roman
   Hargrave]]'s branch.
