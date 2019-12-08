@@ -1,4 +1,4 @@
-;;; coleslaw.el --- Coleslaw static content files. -*- lexical-binding: t; -*-
+;;; coleslaw.el --- Coleslaw static content files -*- lexical-binding: t; -*-
 ;; Copyright (C) 2019 Spenser Truex
 ;; Author: Spenser Truex <web@spensertruex.com>
 ;; Created: 2019-06-16
@@ -29,8 +29,7 @@ Use the same syntax as a normal `defcustom' DOC and
 DEFCUSTOM-KEYS are used for it."
   (let ((def (gensym)))
     `(let ((,def ,default))
-       (progn (unless (boundp ',var) (setq ,var ,def))
-              (defcustom ,var ,def ,doc ,@defcustom-keys)))))
+       (progn (defcustom ,var ,def ,doc ,@defcustom-keys)))))
 
 (coleslaw--custom-default coleslaw-modes
       '(("md" . (markdown-mode))
@@ -47,14 +46,12 @@ nil)' or similar for formats where no mode change is needed."
       :type '(alist :key-type string
                     :value-type (list symbol))
       :group 'coleslaw
-      :local t
       :package-version "0.2.6")
 (coleslaw--custom-default coleslaw-types
   '(".page" ".post")
   "Those file types which coleslaw will try to auto insert into."
   :tag "File type extensions (.page, etc.) to use"
   :type '(list string)
-  :local t
   :package-version "0.2.6"
   :group 'coleslaw)
 
@@ -69,7 +66,6 @@ Where the separator is \";;;;;\"."
   :tag "The separator for the header"
   :type 'string
   :group 'coleslaw
-  :local t
   :package-version "0.2.6")
 
 (defun coleslaw--valid-format (str)
@@ -91,7 +87,7 @@ See Section 2."
 (defun coleslaw--bufftypep ()
   "Confirm that the current buffer is a coleslaw type.
 Uses `coleslaw-types'."
-  (cl-some #'(lambda (type)
+  (cl-some (lambda (type)
                (string= type (coleslaw--bufftype)))
            coleslaw-types))
 (defun coleslaw--bufftype ()
@@ -147,9 +143,9 @@ use (setq auto-insert t)"
                             "format must be in `coleslaw-modes':")
            (coleslaw--skeleton-when
             (y-or-n-p "Insert tags? ")
-            (coleslaw--field #'(lambda (s)
+            (coleslaw--field (lambda (s)
                                  (or (coleslaw--urlp s)
-                                     (cl-some #'(lambda (s)
+                                     (cl-some (lambda (s)
                                                   ;; multiple tags
                                                   (eql ?\  s))
                                               s)))
@@ -208,7 +204,7 @@ If there isn't one then NIL."
                          (cons (coleslaw--mode-regex (car mode))
                                (coleslaw-select-first-mode (cdr mode)))))
 (add-hook 'find-file-hook
-          'coleslaw-insert-header-conditionally)
+          #'coleslaw-insert-header-conditionally)
 
 (provide 'coleslaw)
 
